@@ -1,5 +1,5 @@
 import torch
-from vlam.main import VisionLanguageActionModel, ActionConfig
+from vlam.main import VisionLanguageActionModel, ActionConfig, MAMBA_AVAILABLE
 from loguru import logger
 
 
@@ -7,6 +7,15 @@ from loguru import logger
 if __name__ == "__main__":
     # Configure logging
     logger.info("Initializing Vision-Language-Action Model")
+
+    # Show which Mamba implementation is being used
+    if MAMBA_AVAILABLE:
+        logger.info("✅ Using official mamba-ssm library for optimal performance")
+    else:
+        logger.info("⚠️  Using fallback Mamba implementation")
+        logger.info(
+            "💡 Install mamba-ssm for better performance: pip install mamba-ssm"
+        )
 
     # Create model for robotic arm
     arm_config = ActionConfig.get_arm_config()

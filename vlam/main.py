@@ -16,6 +16,16 @@ from enum import Enum
 from loguru import logger
 import math
 
+# Try to import the official mamba-ssm library
+try:
+    from mamba_ssm import Mamba  # type: ignore
+
+    MAMBA_AVAILABLE = True
+    logger.info("Using official mamba-ssm library")
+except ImportError:
+    MAMBA_AVAILABLE = False
+    logger.info("mamba-ssm library not available, using fallback implementation")
+
 
 class RobotType(Enum):
     """Supported robot configurations."""
@@ -139,7 +149,6 @@ class VisionEncoder(nn.Module):
         Returns:
             Visual features tensor [batch_size, num_patches, feature_dim]
         """
-        batch_size = images.shape[0]
         logger.debug(f"Vision input shape: {images.shape}")
 
         with torch.set_grad_enabled(not self.freeze_backbone):
@@ -252,9 +261,9 @@ class MambaBlock(nn.Module):
         # Simplified implementation - in practice this would be much more sophisticated
         batch, seqlen, d_inner = x.shape
 
-        # Project to get selection parameters
-        x_params = self.x_proj(x)  # [B, L, d_state*2]
-        delta = F.softplus(self.dt_proj(x))  # [B, L, d_inner]
+        # Project to get selection parameters (simplified for fallback)
+        _ = self.x_proj(x)  # [B, L, d_state*2]
+        _ = F.softplus(self.dt_proj(x))  # [B, L, d_inner]
 
         # Simple recurrent computation (placeholder for actual selective scan)
         h = torch.zeros(batch, self.d_state, device=x.device, dtype=x.dtype)
@@ -275,6 +284,7 @@ class MambaBlock(nn.Module):
 class MambaSSM(nn.Module):
     """
     Multi-layer Mamba SSM for processing sequential data.
+    Uses official mamba-ssm library when available, otherwise fallback implementation.
     """
 
     def __init__(self, d_model: int, n_layers: int = 6, d_state: int = 16):
@@ -289,14 +299,22 @@ class MambaSSM(nn.Module):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
+        self.use_official = MAMBA_AVAILABLE
 
-        self.layers = nn.ModuleList(
-            [MambaBlock(d_model, d_state) for _ in range(n_layers)]
-        )
+        if MAMBA_AVAILABLE:
+            # Use official mamba-ssm implementation
+            self.layers = nn.ModuleList(
+                [Mamba(d_model=d_model, d_state=d_state) for _ in range(n_layers)]
+            )
+            logger.info(f"Official Mamba SSM: {n_layers} layers, d_model={d_model}")
+        else:
+            # Use fallback implementation
+            self.layers = nn.ModuleList(
+                [MambaBlock(d_model, d_state) for _ in range(n_layers)]
+            )
+            logger.info(f"Fallback Mamba SSM: {n_layers} layers, d_model={d_model}")
 
         self.norm = nn.LayerNorm(d_model)
-
-        logger.info(f"Mamba SSM: {n_layers} layers, d_model={d_model}")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -311,7 +329,12 @@ class MambaSSM(nn.Module):
         logger.debug(f"Mamba SSM input shape: {x.shape}")
 
         for i, layer in enumerate(self.layers):
-            x = x + layer(x)  # Residual connection
+            if self.use_official:
+                # Official Mamba layers don't need residual connection as it's built-in
+                x = layer(x)
+            else:
+                # Fallback implementation uses residual connection
+                x = x + layer(x)
             logger.debug(f"After Mamba layer {i}: {x.shape}")
 
         x = self.norm(x)
@@ -595,4 +618,5 @@ class VisionLanguageActionModel(nn.Module):
             "trainable_parameters": sum(
                 p.numel() for p in self.parameters() if p.requires_grad
             ),
+            "mamba_implementation": "official" if MAMBA_AVAILABLE else "fallback",
         }

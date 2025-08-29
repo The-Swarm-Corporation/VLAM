@@ -1,11 +1,7 @@
-# Core dependencies
 torch
 torchvision
 numpy
-
-# Logging and utilities
 loguru
-
-# Development and testing dependencies
+mamba-ssm
 black
 ruff

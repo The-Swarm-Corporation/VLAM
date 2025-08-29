@@ -6,7 +6,7 @@
 
 ## Abstract
 
-VLAM (Vision-Language-Action Model) is a novel multimodal architecture that combines vision perception, natural language understanding, and robotic action prediction in a unified framework. Built upon the Mamba State Space Model (SSM), VLAM enables efficient processing of long visual sequences while generating both natural language descriptions and robotic actions simultaneously.
+VLAM (Vision-Language-Action Mamba) is a novel multimodal architecture that combines vision perception, natural language understanding, and robotic action prediction in a unified framework. Built upon the Mamba State Space Model (SSM), VLAM enables efficient processing of long visual sequences while generating both natural language descriptions and robotic actions simultaneously.
 
 ## Key Features
 
