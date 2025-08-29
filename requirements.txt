@@ -3,5 +3,6 @@ torchvision
 numpy
 loguru
 mamba-ssm
+timm
 black
 ruff

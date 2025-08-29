@@ -7,14 +7,15 @@ and uses Mamba state space model to generate both language descriptions and
 robot actions simultaneously.
 """
 
+import math
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Tuple, Optional
-from dataclasses import dataclass
-from enum import Enum
 from loguru import logger
-import math
 
 # Try to import the official mamba-ssm library
 try:
@@ -25,6 +26,8 @@ try:
 except ImportError:
     MAMBA_AVAILABLE = False
     logger.info("mamba-ssm library not available, using fallback implementation")
+
+import timm
 
 
 class RobotType(Enum):
@@ -102,41 +105,120 @@ class ActionConfig:
 
 class VisionEncoder(nn.Module):
     """
-    Pretrained vision encoder wrapper.
-    Uses a modern vision transformer or CNN backbone.
+    Advanced pretrained vision encoder using timm library.
+    Supports state-of-the-art vision models including ConvNeXt, ViT, EfficientNet, and more.
     """
 
-    def __init__(self, model_name: str = "dinov2_vitl14", freeze_backbone: bool = True):
+    # Best performing models categorized by type
+    BEST_MODELS = {
+        "convnext": {
+            "convnext_base": {"feature_dim": 1024, "input_size": 224},
+            "convnext_large": {"feature_dim": 1536, "input_size": 224},
+            "convnext_xlarge": {"feature_dim": 2048, "input_size": 224},
+        },
+        "vit": {
+            "vit_base_patch16_224": {"feature_dim": 768, "input_size": 224},
+            "vit_large_patch16_224": {"feature_dim": 1024, "input_size": 224},
+            "vit_huge_patch14_224": {"feature_dim": 1280, "input_size": 224},
+        },
+        "efficientnet": {
+            "efficientnet_b0": {"feature_dim": 1280, "input_size": 224},
+            "efficientnet_b4": {"feature_dim": 1792, "input_size": 380},
+            "efficientnet_b7": {"feature_dim": 2560, "input_size": 600},
+            "efficientnetv2_s": {"feature_dim": 1280, "input_size": 384},
+            "efficientnetv2_m": {"feature_dim": 1280, "input_size": 480},
+            "efficientnetv2_l": {"feature_dim": 1280, "input_size": 480},
+        },
+        "swin": {
+            "swin_base_patch4_window7_224": {"feature_dim": 1024, "input_size": 224},
+            "swin_large_patch4_window7_224": {"feature_dim": 1536, "input_size": 224},
+        },
+        "resnet": {
+            "resnet50": {"feature_dim": 2048, "input_size": 224},
+            "resnet101": {"feature_dim": 2048, "input_size": 224},
+            "resnet152": {"feature_dim": 2048, "input_size": 224},
+        },
+        "deit": {
+            "deit3_base_patch16_224": {"feature_dim": 768, "input_size": 224},
+            "deit3_large_patch16_224": {"feature_dim": 1024, "input_size": 224},
+        },
+    }
+
+    def __init__(self, model_name: str = "convnext_base", freeze_backbone: bool = True):
         """
-        Initialize vision encoder.
+        Initialize vision encoder with timm pretrained models.
 
         Args:
-            model_name: Name of pretrained vision model
+            model_name: Name of pretrained vision model from timm
             freeze_backbone: Whether to freeze pretrained weights
         """
         super().__init__()
         self.model_name = model_name
         self.freeze_backbone = freeze_backbone
-        self.feature_dim = 1024  # DINOv2 ViT-L/14 output dimension
 
-        # In practice, would load actual pretrained model
-        # For this theoretical implementation, using placeholder
-        self.backbone = self._create_vision_backbone()
-        self.projection = nn.Linear(64 * 14 * 14, self.feature_dim)
+        # Get model info
+        self.model_info = self._get_model_info(model_name)
+        self.feature_dim = self.model_info["feature_dim"]
+        self.input_size = self.model_info["input_size"]
 
+        # Create backbone
+        self.backbone = self._create_timm_backbone()
+        self.projection = None  # Not needed for timm models
+        logger.info(f"Using timm model: {model_name}")
+
+        # Freeze backbone if requested
         if freeze_backbone:
             for param in self.backbone.parameters():
                 param.requires_grad = False
 
-        logger.info(f"Initialized vision encoder: {model_name}")
-        logger.info(f"Feature dimension: {self.feature_dim}")
+        logger.info("Vision encoder initialized:")
+        logger.info(f"  Model: {model_name}")
+        logger.info(f"  Feature dimension: {self.feature_dim}")
+        logger.info(f"  Input size: {self.input_size}")
+        logger.info(f"  Frozen: {freeze_backbone}")
 
-    def _create_vision_backbone(self) -> nn.Module:
-        """Create vision backbone (placeholder for actual pretrained model)."""
+    def _get_model_info(self, model_name: str) -> Dict[str, int]:
+        """Get model information from predefined best models or fallback."""
+        for model_type, models in self.BEST_MODELS.items():
+            if model_name in models:
+                return models[model_name]
+
+        # Fallback for unknown models
+        logger.warning(f"Unknown model {model_name}, using default feature_dim=1024")
+        return {"feature_dim": 1024, "input_size": 224}
+
+    def _create_timm_backbone(self) -> nn.Module:
+        """Create vision backbone using timm library."""
+        try:
+            # Create model without classifier head
+            model = timm.create_model(
+                self.model_name,
+                pretrained=True,
+                num_classes=0,  # Remove classification head
+                global_pool="",  # Remove global pooling to get spatial features
+            )
+
+            # Get the feature extractor
+            return model
+
+        except Exception as e:
+            logger.error(f"Failed to load timm model {self.model_name}: {e}")
+            logger.info("Falling back to basic implementation")
+            return self._create_fallback_backbone()
+
+    def _create_fallback_backbone(self) -> nn.Module:
+        """Create fallback vision backbone when timm is not available."""
         return nn.Sequential(
             nn.Conv2d(3, 64, 7, 2, 3),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d((14, 14)),  # 14x14 patches like ViT
+            nn.Conv2d(64, 128, 3, 2, 1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.Conv2d(128, 256, 3, 2, 1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((14, 14)),
         )
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
@@ -152,24 +234,86 @@ class VisionEncoder(nn.Module):
         logger.debug(f"Vision input shape: {images.shape}")
 
         with torch.set_grad_enabled(not self.freeze_backbone):
-            # Process through conv layers
-            features = self.backbone(images)  # [B, 64, 14, 14]
-            logger.debug(f"After backbone shape: {features.shape}")
-
-            # Reshape to patches - flatten all dimensions except batch
-            features = features.flatten(1, -1)  # [B, 64*14*14] = [B, 12544]
-            logger.debug(f"After flatten shape: {features.shape}")
-
-            # Project to feature dimension
-            features = self.projection(features)  # [B, 1024]
-            logger.debug(f"After projection shape: {features.shape}")
-
-            # Reshape to [B, num_patches, feature_dim]
-            features = features.unsqueeze(1)  # [B, 1, 1024]
-            logger.debug(f"Final features shape: {features.shape}")
+            features = self._forward_timm(images)
 
         logger.debug(f"Vision features shape: {features.shape}")
         return features
+
+    def _forward_timm(self, images: torch.Tensor) -> torch.Tensor:
+        """Forward pass using timm model."""
+        # Resize images to model's expected input size if needed
+        if images.shape[-1] != self.input_size or images.shape[-2] != self.input_size:
+            images = F.interpolate(
+                images,
+                size=(self.input_size, self.input_size),
+                mode="bilinear",
+                align_corners=False,
+            )
+            logger.debug(f"Resized images to: {images.shape}")
+
+        # Get features from timm model
+        features = self.backbone(images)  # Shape depends on model architecture
+
+        # Handle different output formats from different timm models
+        if len(features.shape) == 4:  # CNN-style output [B, C, H, W]
+            batch_size, channels, height, width = features.shape
+            # Global average pooling to get fixed-size features
+            features = F.adaptive_avg_pool2d(features, (1, 1))  # [B, C, 1, 1]
+            features = features.flatten(1)  # [B, C]
+            features = features.unsqueeze(1)  # [B, 1, C] for sequence compatibility
+            logger.debug(f"CNN features processed to: {features.shape}")
+
+        elif len(features.shape) == 3:  # Transformer-style output [B, seq_len, C]
+            # Features are already in the right format for transformers
+            logger.debug(f"Transformer features: {features.shape}")
+
+        elif len(features.shape) == 2:  # Global pooled features [B, C]
+            features = features.unsqueeze(1)  # [B, 1, C] for sequence compatibility
+            logger.debug(f"Global features processed to: {features.shape}")
+
+        return features
+
+    def _forward_fallback(self, images: torch.Tensor) -> torch.Tensor:
+        """Forward pass using fallback implementation."""
+        features = self.backbone(images)  # [B, 256, 14, 14]
+        logger.debug(f"Fallback backbone output: {features.shape}")
+
+        # Flatten spatial dimensions
+        features = features.flatten(1, -1)  # [B, 256*14*14]
+
+        # Project to target feature dimension
+        features = self.projection(features)  # [B, feature_dim]
+
+        # Add sequence dimension for compatibility
+        features = features.unsqueeze(1)  # [B, 1, feature_dim]
+
+        return features
+
+    @classmethod
+    def list_available_models(cls) -> Dict[str, List[str]]:
+        """List all available best-performing models by category."""
+        return {
+            category: list(models.keys())
+            for category, models in cls.BEST_MODELS.items()
+        }
+
+    @classmethod
+    def get_recommended_model(cls, performance_tier: str = "balanced") -> str:
+        """
+        Get recommended model based on performance tier.
+
+        Args:
+            performance_tier: "fast", "balanced", or "best"
+
+        Returns:
+            Recommended model name
+        """
+        recommendations = {
+            "fast": "efficientnet_b0",
+            "balanced": "convnext_base",
+            "best": "convnext_large",
+        }
+        return recommendations.get(performance_tier, "convnext_base")
 
 
 class MambaBlock(nn.Module):
@@ -449,26 +593,29 @@ class VisionLanguageActionModel(nn.Module):
     def __init__(
         self,
         action_config: ActionConfig,
-        vision_model: str = "dinov2_vitl14",
+        vision_model: str = "convnext_base",
         d_model: int = 1024,
         n_layers: int = 6,
         d_state: int = 16,
         vocab_size: int = 32000,
         freeze_vision: bool = True,
+        verbose: bool = False,
     ):
         """
         Initialize VLA model.
 
         Args:
             action_config: Robot action configuration
-            vision_model: Pretrained vision model name
+            vision_model: Pretrained vision model name from timm (e.g., 'convnext_base', 'vit_base_patch16_224', 'efficientnet_b0')
             d_model: Model dimension
             n_layers: Number of Mamba layers
             d_state: SSM state dimension
             vocab_size: Language vocabulary size
             freeze_vision: Whether to freeze vision encoder
+            verbose: Enable verbose logging
         """
         super().__init__()
+        self.verbose = verbose
         self.action_config = action_config
         self.d_model = d_model
 
@@ -493,6 +640,9 @@ class VisionLanguageActionModel(nn.Module):
         logger.info(f"  Action dim: {action_config.action_dim}")
         logger.info(f"  Model dim: {d_model}")
         logger.info(f"  Mamba layers: {n_layers}")
+
+        # if self.verbose is False:
+        #     logger.disable("vlam")
 
     def _create_positional_encoding(
         self, d_model: int, max_len: int = 5000
@@ -614,9 +764,47 @@ class VisionLanguageActionModel(nn.Module):
             "action_dimension": self.action_config.action_dim,
             "action_bounds": self.action_config.action_bounds,
             "joint_names": self.action_config.joint_names,
+            "vision_model": self.vision_encoder.model_name,
+            "vision_feature_dim": self.vision_encoder.feature_dim,
+            "vision_input_size": self.vision_encoder.input_size,
             "model_parameters": sum(p.numel() for p in self.parameters()),
             "trainable_parameters": sum(
                 p.numel() for p in self.parameters() if p.requires_grad
             ),
-            "mamba_implementation": "official" if MAMBA_AVAILABLE else "fallback",
         }
+
+    @classmethod
+    def list_supported_vision_models(cls) -> Dict[str, List[str]]:
+        """List all supported vision models by category."""
+        return VisionEncoder.list_available_models()
+
+    @classmethod
+    def get_recommended_vision_model(cls, performance_tier: str = "balanced") -> str:
+        """
+        Get recommended vision model based on performance requirements.
+
+        Args:
+            performance_tier: "fast", "balanced", or "best"
+
+        Returns:
+            Recommended model name
+        """
+        return VisionEncoder.get_recommended_model(performance_tier)
+
+    @classmethod
+    def create_with_recommended_vision(
+        cls, action_config: ActionConfig, performance_tier: str = "balanced", **kwargs
+    ) -> "VisionLanguageActionModel":
+        """
+        Create VLA model with recommended vision model for given performance tier.
+
+        Args:
+            action_config: Robot action configuration
+            performance_tier: "fast", "balanced", or "best"
+            **kwargs: Additional arguments passed to constructor
+
+        Returns:
+            VLA model instance
+        """
+        vision_model = cls.get_recommended_vision_model(performance_tier)
+        return cls(action_config=action_config, vision_model=vision_model, **kwargs)
