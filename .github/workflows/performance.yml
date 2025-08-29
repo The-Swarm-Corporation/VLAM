@@ -1,0 +1,185 @@
+name: Performance Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 4 * * 1'  # Run every Monday at 4 AM UTC
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-benchmark memory-profiler psutil
+
+    - name: Create performance test
+      run: |
+        cat > benchmark_test.py << 'EOF'
+        import torch
+        import time
+        import psutil
+        import tracemalloc
+        from vlam.main import VisionLanguageActionModel, ActionConfig
+
+        def benchmark_inference():
+            """Benchmark model inference performance."""
+            print("Starting performance benchmark...")
+            
+            # Test configuration
+            config = ActionConfig.get_arm_config()
+            model = VisionLanguageActionModel(
+                action_config=config,
+                d_model=256,
+                n_layers=4
+            )
+            model.eval()
+            
+            # Benchmark single image inference
+            image = torch.randn(1, 3, 224, 224)
+            
+            # Warmup
+            for _ in range(5):
+                with torch.no_grad():
+                    _ = model(image)
+            
+            # Timing benchmark
+            times = []
+            tracemalloc.start()
+            
+            for i in range(100):
+                start_time = time.time()
+                with torch.no_grad():
+                    outputs = model(image)
+                end_time = time.time()
+                times.append(end_time - start_time)
+            
+            current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            
+            # Results
+            avg_time = sum(times) / len(times)
+            min_time = min(times)
+            max_time = max(times)
+            
+            print(f"Average inference time: {avg_time*1000:.2f}ms")
+            print(f"Min inference time: {min_time*1000:.2f}ms")
+            print(f"Max inference time: {max_time*1000:.2f}ms")
+            print(f"Memory usage: {current / 1024 / 1024:.2f}MB")
+            print(f"Peak memory: {peak / 1024 / 1024:.2f}MB")
+            
+            # Performance thresholds
+            assert avg_time < 0.1, f"Average inference too slow: {avg_time*1000:.2f}ms"
+            assert peak / 1024 / 1024 < 500, f"Memory usage too high: {peak / 1024 / 1024:.2f}MB"
+            
+            print("✅ Performance benchmarks passed!")
+
+        def benchmark_sequence():
+            """Benchmark sequence processing performance."""
+            print("Testing sequence processing performance...")
+            
+            config = ActionConfig.get_arm_config()
+            model = VisionLanguageActionModel(
+                action_config=config,
+                d_model=256,
+                n_layers=4
+            )
+            model.eval()
+            
+            # Test different sequence lengths
+            sequence_lengths = [1, 5, 10, 20]
+            
+            for seq_len in sequence_lengths:
+                images = torch.randn(1, seq_len, 3, 224, 224)
+                
+                # Warmup
+                for _ in range(3):
+                    with torch.no_grad():
+                        _ = model(images)
+                
+                # Timing
+                times = []
+                for _ in range(10):
+                    start_time = time.time()
+                    with torch.no_grad():
+                        outputs = model(images)
+                    end_time = time.time()
+                    times.append(end_time - start_time)
+                
+                avg_time = sum(times) / len(times)
+                print(f"Sequence length {seq_len}: {avg_time*1000:.2f}ms")
+                
+                # Linear scaling expectation (with some tolerance)
+                if seq_len > 1:
+                    time_per_frame = avg_time / seq_len
+                    assert time_per_frame < 0.05, f"Per-frame time too high: {time_per_frame*1000:.2f}ms"
+            
+            print("✅ Sequence performance tests passed!")
+
+        if __name__ == "__main__":
+            benchmark_inference()
+            benchmark_sequence()
+        EOF
+
+    - name: Run performance benchmarks
+      run: |
+        python benchmark_test.py
+
+    - name: System resource check
+      run: |
+        echo "System information:"
+        echo "CPU cores: $(nproc)"
+        echo "Memory: $(free -h | grep '^Mem:' | awk '{print $2}')"
+        echo "Python version: $(python --version)"
+        echo "PyTorch version: $(python -c 'import torch; print(torch.__version__)')"
+
+    - name: Model size analysis
+      run: |
+        cat > model_analysis.py << 'EOF'
+        import torch
+        from vlam.main import VisionLanguageActionModel, ActionConfig
+
+        def analyze_model_size():
+            """Analyze model parameter count and size."""
+            config = ActionConfig.get_arm_config()
+            
+            model_configs = [
+                {"d_model": 128, "n_layers": 2, "name": "Small"},
+                {"d_model": 256, "n_layers": 4, "name": "Medium"},
+                {"d_model": 512, "n_layers": 6, "name": "Large"},
+            ]
+            
+            for model_config in model_configs:
+                name = model_config.pop("name")
+                model = VisionLanguageActionModel(action_config=config, **model_config)
+                
+                total_params = sum(p.numel() for p in model.parameters())
+                trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                
+                # Estimate model size in MB
+                param_size = total_params * 4 / (1024 * 1024)  # 4 bytes per float32
+                
+                print(f"{name} Model:")
+                print(f"  Total parameters: {total_params:,}")
+                print(f"  Trainable parameters: {trainable_params:,}")
+                print(f"  Estimated size: {param_size:.2f}MB")
+                print()
+
+        if __name__ == "__main__":
+            analyze_model_size()
+        EOF
+        
+        python model_analysis.py

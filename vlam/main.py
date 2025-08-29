@@ -57,7 +57,7 @@ class ActionConfig:
         """Humanoid robot configuration."""
         return cls(
             robot_type=RobotType.HUMANOID,
-            action_dim=25,
+            action_dim=26,
             action_bounds=(-1.0, 1.0),
             joint_names=[
                 "head_yaw",
