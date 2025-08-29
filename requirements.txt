@@ -1,0 +1,42 @@
+# Core dependencies
+torch>=2.0.0,<3.0.0
+torchvision>=0.15.0,<1.0.0
+numpy>=1.21.0,<2.0.0
+
+# Logging and utilities
+loguru>=0.7.0
+dataclasses>=0.8; python_version<"3.7"
+
+# Mathematics and scientific computing
+scipy>=1.9.0
+scikit-learn>=1.1.0
+
+# Development and testing dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=22.0.0
+flake8>=5.0.0
+isort>=5.10.0
+
+# Visualization (for plotting functionality)
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Documentation (optional)
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+myst-parser>=0.18.0
+
+# Optional: For actual pretrained vision models (if integrating real models)
+# transformers>=4.20.0
+# timm>=0.6.0
+# clip-by-openai>=1.0
+
+# Optional: For advanced robotics integration
+# gymnasium>=0.26.0
+# pybullet>=3.2.0
+# mujoco>=2.3.0
+
+# Performance optimization (optional)
+# ninja>=1.10.0  # For faster PyTorch compilation
+# flash-attn>=2.0.0  # For optimized attention (if using transformers)
