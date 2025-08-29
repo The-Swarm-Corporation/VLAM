@@ -341,7 +341,7 @@ If you use VLAM in your research, please cite:
 ```bibtex
 @article{vlam2024,
   title={VLAM: Vision-Language-Action Model with Mamba State Space Models},
-  author={Author Name and Co-Author},
+  author={Kye Gomez, The Swarms Corporation},
   journal={arXiv preprint arXiv:2024.XXXXX},
   year={2024}
 }
@@ -361,9 +361,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Contact
 
 For questions and support:
-- GitHub Issues: [https://github.com/your-org/vlam/issues](https://github.com/your-org/vlam/issues)
-- Email: vlam-support@your-org.com
-- Documentation: [https://vlam.readthedocs.io](https://vlam.readthedocs.io)
+
+- Email: kye@swarms.world
 
 ---
 

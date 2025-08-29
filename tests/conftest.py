@@ -33,7 +33,7 @@ def custom_config():
         robot_type=RobotType.MOBILE_MANIPULATOR,
         action_dim=10,
         action_bounds=(-1.5, 1.5),
-        joint_names=[f"joint_{i}" for i in range(10)]
+        joint_names=[f"joint_{i}" for i in range(10)],
     )
 
 
@@ -41,10 +41,7 @@ def custom_config():
 def small_model(arm_config):
     """Small model for quick testing."""
     return VisionLanguageActionModel(
-        action_config=arm_config,
-        d_model=128,
-        n_layers=2,
-        vocab_size=1000
+        action_config=arm_config, d_model=128, n_layers=2, vocab_size=1000
     )
 
 
@@ -52,10 +49,7 @@ def small_model(arm_config):
 def medium_model(arm_config):
     """Medium model for more comprehensive testing."""
     return VisionLanguageActionModel(
-        action_config=arm_config,
-        d_model=256,
-        n_layers=4,
-        vocab_size=5000
+        action_config=arm_config, d_model=256, n_layers=4, vocab_size=5000
     )
 
 
@@ -96,9 +90,9 @@ def set_random_seeds():
 def mock_training_data(sample_images, sample_actions, sample_language_tokens):
     """Mock training data batch."""
     return {
-        'images': sample_images,
-        'actions': sample_actions,
-        'language': sample_language_tokens
+        "images": sample_images,
+        "actions": sample_actions,
+        "language": sample_language_tokens,
     }
 
 
@@ -107,9 +101,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: mark tests as slow (may take a few seconds)"
     )
-    config.addinivalue_line(
-        "markers", "gpu: mark tests that require GPU"
-    )
+    config.addinivalue_line("markers", "gpu: mark tests that require GPU")
     config.addinivalue_line(
         "markers", "memory_intensive: mark tests that use significant memory"
     )
@@ -121,13 +113,18 @@ def pytest_collection_modifyitems(config, items):
         # Mark GPU tests
         if "gpu" in item.nodeid.lower() or "cuda" in item.nodeid.lower():
             item.add_marker(pytest.mark.gpu)
-        
+
         # Mark slow tests
-        if any(keyword in item.name.lower() for keyword in ['performance', 'benchmark', 'scaling']):
+        if any(
+            keyword in item.name.lower()
+            for keyword in ["performance", "benchmark", "scaling"]
+        ):
             item.add_marker(pytest.mark.slow)
-        
+
         # Mark memory intensive tests
-        if any(keyword in item.name.lower() for keyword in ['memory', 'large', 'batch']):
+        if any(
+            keyword in item.name.lower() for keyword in ["memory", "large", "batch"]
+        ):
             item.add_marker(pytest.mark.memory_intensive)
 
 
@@ -135,6 +132,7 @@ def pytest_collection_modifyitems(config, items):
 def suppress_logs():
     """Suppress loguru logs during testing."""
     import loguru
+
     logger = loguru.logger
     logger.remove()
     yield
