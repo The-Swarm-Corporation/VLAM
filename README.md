@@ -76,7 +76,6 @@ pip install -e .
 
 ```python
 import torch
-from vlam import VisionLanguageActionModel, ActionConfig
 
 # Configure for robotic arm
 config = ActionConfig.get_arm_config()
@@ -88,14 +87,21 @@ model = VisionLanguageActionModel(
     n_layers=6
 )
 
+# Move model to CUDA
+model = model.to("cuda")
+
 # Process visual input
-images = torch.randn(1, 5, 3, 224, 224)  # [batch, sequence, channels, height, width]
-outputs = model(images)
+images = torch.randn(1, 5, 3, 224, 224).to("cuda")  # [batch, sequence, channels, height, width]
+outputs = model(images)  # No need to call .to("cuda") on outputs
+print(outputs)
 
 # Extract predictions
 actions = outputs['actions']           # Robot actions
 language_logits = outputs['language_logits']  # Language descriptions
 features = outputs['features']         # Intermediate representations
+
+print(actions.shape)
+print(language_logits)
 ```
 
 ### Single-Step Prediction
